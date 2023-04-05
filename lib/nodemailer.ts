@@ -1,5 +1,3 @@
-'use strict';
-
 const Mailer = require('./mailer');
 const shared = require('./shared');
 const SMTPPool = require('./smtp-pool');
@@ -17,7 +15,7 @@ const ETHEREAL_CACHE = ['true', 'yes', 'y', '1'].includes((process.env.ETHEREAL_
 
 let testAccount = false;
 
-module.exports.createTransport = function (transporter, defaults) {
+export function createTransport(transporter, defaults) {
     let urlConfig;
     let options;
     let mailer;
@@ -53,9 +51,9 @@ module.exports.createTransport = function (transporter, defaults) {
     mailer = new Mailer(transporter, options, defaults);
 
     return mailer;
-};
+}
 
-module.exports.createTestAccount = function (apiUrl, callback) {
+export function createTestAccount(apiUrl, callback) {
     let promise;
 
     if (!callback && typeof apiUrl === 'function') {
@@ -121,9 +119,9 @@ module.exports.createTestAccount = function (apiUrl, callback) {
     });
 
     return promise;
-};
+}
 
-module.exports.getTestMessageUrl = function (info) {
+export function getTestMessageUrl(info) {
     if (!info || !info.response) {
         return false;
     }
@@ -140,4 +138,4 @@ module.exports.getTestMessageUrl = function (info) {
     }
 
     return false;
-};
+}

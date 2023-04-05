@@ -1,23 +1,40 @@
-'use strict';
+// const http = require('http');
+// const https = require('https');
+// const urllib = require('url');
+// const zlib = require('zlib');
+// const PassThrough = require('stream').PassThrough;
+// const Cookies = require('./cookies');
+// const packageData = require('../../package.json');
+// const net = require('net');
 
-const http = require('http');
-const https = require('https');
-const urllib = require('url');
-const zlib = require('zlib');
-const PassThrough = require('stream').PassThrough;
-const Cookies = require('./cookies');
-const packageData = require('../../package.json');
-const net = require('net');
+import Cookies from './cookies.ts';
+import { setImmediate } from 'https://deno.land/std@0.140.0/node/timers.ts';
 
 const MAX_REDIRECTS = 5;
 
-module.exports = function (url, options) {
-    return nmfetch(url, options);
+export type FetchOptions = {
+    fetchRes?: Writable | undefined;
+    cookies?: Cookies | undefined;
+    cookie?: string | undefined;
+    redirects?: number | undefined;
+    maxRedirects?: number | undefined;
+    method?: string | undefined;
+    headers?: { [key: string]: string } | undefined;
+    userAgent?: string | undefined;
+    body?: Buffer | string | { [key: string]: string } | undefined;
+    contentType?: string | false | undefined;
+    tls?: tls.TlsOptions | undefined;
+    timeout?: number | undefined;
+    allowErrorResponse?: boolean | undefined;
 };
 
-module.exports.Cookies = Cookies;
+export default function (url: string, options: FetchOptions) {
+    return nmfetch(url, options);
+}
 
-function nmfetch(url, options) {
+export { Cookies };
+
+function nmfetch(url: string, options: FetchOptions) {
     options = options || {};
 
     options.fetchRes = options.fetchRes || new PassThrough();
@@ -33,7 +50,7 @@ function nmfetch(url, options) {
     }
 
     let fetchRes = options.fetchRes;
-    let parsed = urllib.parse(url);
+    let parsed = new URL(url);
     let method = (options.method || '').toString().trim().toUpperCase() || 'GET';
     let finished = false;
     let cookies;
@@ -41,7 +58,7 @@ function nmfetch(url, options) {
 
     let handler = parsed.protocol === 'https:' ? https : http;
 
-    let headers = {
+    let headers: Headers = {
         'accept-encoding': 'gzip,deflate',
         'user-agent': 'nodemailer/' + packageData.version
     };

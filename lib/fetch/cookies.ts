@@ -1,52 +1,70 @@
-'use strict';
-
 // module to handle cookies
 
-const urllib = require('url');
-
 const SESSION_TIMEOUT = 1800; // 30 min
+
+export type CookieOptions = {
+    sessionTimeout?: number;
+};
+
+export type Cookie = {
+    name: string;
+    value?: string;
+    expires?: Date;
+    path?: string;
+    domain?: string;
+    secure?: boolean;
+    httponly?: boolean;
+};
 
 /**
  * Creates a biskviit cookie jar for managing cookie values in memory
  *
  * @constructor
- * @param {Object} [options] Optional options object
+ * @param [options] Optional options object
  */
-class Cookies {
-    constructor(options) {
-        this.options = options || {};
+export default class Cookies {
+    public options: CookieOptions;
+    public cookies: Cookie[];
+
+    constructor(options: CookieOptions = {}) {
+        this.options = options;
         this.cookies = [];
     }
 
     /**
      * Stores a cookie string to the cookie storage
      *
-     * @param {String} cookieStr Value from the 'Set-Cookie:' header
-     * @param {String} url Current URL
+     * @param cookieStr Value from the 'Set-Cookie:' header
+     * @param url Current URL
      */
-    set(cookieStr, url) {
-        let urlparts = urllib.parse(url || '');
-        let cookie = this.parse(cookieStr);
-        let domain;
+    set(cookieStr: string, url: string) {
+        let parsedUrl: URL | undefined;
+        try {
+            parsedUrl = new URL(url);
+        } catch {
+            return false;
+        }
+
+        const cookie = this.parse(cookieStr);
 
         if (cookie.domain) {
-            domain = cookie.domain.replace(/^\./, '');
+            const domain = cookie.domain.replace(/^\./, '');
 
             // do not allow cross origin cookies
             if (
                 // can't be valid if the requested domain is shorter than current hostname
-                urlparts.hostname.length < domain.length ||
+                parsedUrl.hostname.length < domain.length ||
                 // prefix domains with dot to be sure that partial matches are not used
-                ('.' + urlparts.hostname).substr(-domain.length + 1) !== '.' + domain
+                ('.' + parsedUrl.hostname).slice(-domain.length + 1) !== '.' + domain
             ) {
-                cookie.domain = urlparts.hostname;
+                cookie.domain = parsedUrl.hostname;
             }
         } else {
-            cookie.domain = urlparts.hostname;
+            cookie.domain = parsedUrl.hostname;
         }
 
         if (!cookie.path) {
-            cookie.path = this.getPath(urlparts.pathname);
+            cookie.path = this.getPath(parsedUrl.pathname);
         }
 
         // if no expire date, then use sessionTimeout value
@@ -60,23 +78,23 @@ class Cookies {
     /**
      * Returns cookie string for the 'Cookie:' header.
      *
-     * @param {String} url URL to check for
-     * @returns {String} Cookie header or empty string if no matches were found
+     * @param url URL to check for
+     * @returns Cookie header or empty string if no matches were found
      */
-    get(url) {
+    get(url: string): string {
         return this.list(url)
             .map(cookie => cookie.name + '=' + cookie.value)
             .join('; ');
     }
 
     /**
-     * Lists all valied cookie objects for the specified URL
+     * Lists all valid cookie objects for the specified URL
      *
-     * @param {String} url URL to check for
-     * @returns {Array} An array of cookie objects
+     * @param url URL to check for
+     * @returns An array of cookie objects
      */
-    list(url) {
-        let result = [];
+    list(url: string): Cookie[] {
+        const result: Cookie[] = [];
         let i;
         let cookie;
 
@@ -99,20 +117,23 @@ class Cookies {
     /**
      * Parses cookie string from the 'Set-Cookie:' header
      *
-     * @param {String} cookieStr String from the 'Set-Cookie:' header
-     * @returns {Object} Cookie object
+     * @param cookieStr String from the 'Set-Cookie:' header
+     * @returns Cookie object
      */
-    parse(cookieStr) {
-        let cookie = {};
+    parse(cookieStr: string): Cookie {
+        const cookie: Partial<Cookie> = {};
 
         (cookieStr || '')
             .toString()
             .split(';')
             .forEach(cookiePart => {
-                let valueParts = cookiePart.split('=');
-                let key = valueParts.shift().trim().toLowerCase();
-                let value = valueParts.join('=').trim();
-                let domain;
+                const valueParts = cookiePart.split('=');
+                const firstPart = valueParts.shift();
+                if (!firstPart) {
+                    return;
+                }
+                const key = firstPart.trim().toLowerCase();
+                const value = valueParts.join('=').trim();
 
                 if (!key) {
                     // skip empty parts
@@ -120,25 +141,25 @@ class Cookies {
                 }
 
                 switch (key) {
-                    case 'expires':
-                        value = new Date(value);
+                    case 'expires': {
+                        const expiration = new Date(value);
                         // ignore date if can not parse it
-                        if (value.toString() !== 'Invalid Date') {
-                            cookie.expires = value;
+                        if (!Number.isNaN(expiration.valueOf())) {
+                            cookie.expires = expiration;
                         }
                         break;
-
+                    }
                     case 'path':
                         cookie.path = value;
                         break;
-
-                    case 'domain':
-                        domain = value.toLowerCase();
+                    case 'domain': {
+                        let domain = value.toLowerCase();
                         if (domain.length && domain.charAt(0) !== '.') {
                             domain = '.' + domain; // ensure preceeding dot for user set domains
                         }
                         cookie.domain = domain;
                         break;
+                    }
 
                     case 'max-age':
                         cookie.expires = new Date(Date.now() + (Number(value) || 0) * 1000);
@@ -160,36 +181,47 @@ class Cookies {
                 }
             });
 
-        return cookie;
+        return cookie as Cookie;
     }
 
     /**
      * Checks if a cookie object is valid for a specified URL
      *
-     * @param {Object} cookie Cookie object
-     * @param {String} url URL to check for
-     * @returns {Boolean} true if cookie is valid for specifiec URL
+     * @param cookie Cookie object
+     * @param url URL to check for
+     * @returns true if cookie is valid for specifiec URL
      */
-    match(cookie, url) {
-        let urlparts = urllib.parse(url || '');
+    match(cookie: Cookie, url: string): boolean {
+        let parsedUrl: URL | undefined;
+        try {
+            parsedUrl = new URL(url);
+        } catch {
+            return false;
+        }
+
+        // Fail if cookie doesn't have all required properties.
+        // In original nodemailer implementation, this function would just crash.
+        if (!cookie.domain || !cookie.path) {
+            return false;
+        }
 
         // check if hostname matches
         // .foo.com also matches subdomains, foo.com does not
         if (
-            urlparts.hostname !== cookie.domain &&
-            (cookie.domain.charAt(0) !== '.' || ('.' + urlparts.hostname).substr(-cookie.domain.length) !== cookie.domain)
+            parsedUrl.hostname !== cookie.domain &&
+            (cookie.domain.charAt(0) !== '.' || ('.' + parsedUrl.hostname).slice(-cookie.domain.length) !== cookie.domain)
         ) {
             return false;
         }
 
         // check if path matches
-        let path = this.getPath(urlparts.pathname);
+        const path = this.getPath(parsedUrl.pathname);
         if (path.substr(0, cookie.path.length) !== cookie.path) {
             return false;
         }
 
         // check secure argument
-        if (cookie.secure && urlparts.protocol !== 'https:') {
+        if (cookie.secure && parsedUrl.protocol !== 'https:') {
             return false;
         }
 
@@ -199,9 +231,9 @@ class Cookies {
     /**
      * Adds (or updates/removes if needed) a cookie object to the cookie storage
      *
-     * @param {Object} cookie Cookie value to be stored
+     * @param cookie Cookie value to be stored
      */
-    add(cookie) {
+    add(cookie: Cookie): boolean {
         let i;
         let len;
 
@@ -235,34 +267,34 @@ class Cookies {
     /**
      * Checks if two cookie objects are the same
      *
-     * @param {Object} a Cookie to check against
-     * @param {Object} b Cookie to check against
-     * @returns {Boolean} True, if the cookies are the same
+     * @param a Cookie to check against
+     * @param b Cookie to check against
+     * @returns True, if the cookies are the same
      */
-    compare(a, b) {
+    compare(a: Cookie, b: Cookie): boolean {
         return a.name === b.name && a.path === b.path && a.domain === b.domain && a.secure === b.secure && a.httponly === a.httponly;
     }
 
     /**
      * Checks if a cookie is expired
      *
-     * @param {Object} cookie Cookie object to check against
-     * @returns {Boolean} True, if the cookie is expired
+     * @param cookie Cookie object to check against
+     * @returns True, if the cookie is expired
      */
-    isExpired(cookie) {
+    isExpired(cookie: Cookie): boolean {
         return (cookie.expires && cookie.expires < new Date()) || !cookie.value;
     }
 
     /**
      * Returns normalized cookie path for an URL path argument
      *
-     * @param {String} pathname
-     * @returns {String} Normalized path
+     * @param pathname
+     * @returns Normalized path
      */
-    getPath(pathname) {
-        let path = (pathname || '/').split('/');
-        path.pop(); // remove filename part
-        path = path.join('/').trim();
+    getPath(pathname: string): string {
+        const pathSegments = (pathname || '/').split('/');
+        pathSegments.pop(); // remove filename part
+        let path = pathSegments.join('/').trim();
 
         // ensure path prefix /
         if (path.charAt(0) !== '/') {
@@ -277,5 +309,3 @@ class Cookies {
         return path;
     }
 }
-
-module.exports = Cookies;
